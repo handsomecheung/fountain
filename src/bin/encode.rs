@@ -26,6 +26,11 @@ struct Cli {
     /// Show all QR codes at once without carousel (only with --terminal)
     #[arg(long)]
     no_carousel: bool,
+
+    /// Maximum payload size (bytes) per QR code. Smaller values make QR codes less dense and easier to scan.
+    /// Default is ~1400 for file output (high density) and 100 for terminal.
+    #[arg(short = 's', long, alias = "payload-size")]
+    chunk_size: Option<usize>,
 }
 
 fn main() -> Result<()> {
@@ -50,8 +55,11 @@ fn main() -> Result<()> {
     } else {
         println!("Encoding file: {}", args.input.display());
         println!("Output directory: {}", args.output.display());
+        if let Some(size) = args.chunk_size {
+            println!("Max payload size: {} bytes", size);
+        }
 
-        let result = encode_file(&args.input, &args.output)?;
+        let result = encode_file(&args.input, &args.output, args.chunk_size)?;
 
         println!();
         println!("Successfully created {} QR code(s)", result.num_chunks);

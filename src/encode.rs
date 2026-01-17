@@ -17,7 +17,7 @@ pub struct TerminalQrData {
     pub qr_strings: Vec<String>,
 }
 
-pub fn encode_file(input_path: &Path, output_dir: &Path) -> Result<EncodeResult> {
+pub fn encode_file(input_path: &Path, output_dir: &Path, chunk_size: Option<usize>) -> Result<EncodeResult> {
     let data = fs::read(input_path)?;
     let filename = input_path
         .file_name()
@@ -26,7 +26,12 @@ pub fn encode_file(input_path: &Path, output_dir: &Path) -> Result<EncodeResult>
 
     fs::create_dir_all(output_dir)?;
 
-    let chunks = split_into_chunks(&data, filename)?;
+    let chunks = if let Some(size) = chunk_size {
+        split_into_chunks_with_size(&data, filename, size)?
+    } else {
+        split_into_chunks(&data, filename)?
+    };
+    
     let num_chunks = chunks.len();
     let mut output_files = Vec::new();
 
