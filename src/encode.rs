@@ -2,8 +2,11 @@ use anyhow::{anyhow, Result};
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 use std::fs;
 use std::path::Path;
+use image::{Frame, Delay, RgbaImage};
+use image::codecs::gif::GifEncoder;
+use std::time::Duration;
 
-use crate::chunk::{split_into_chunks, split_into_chunks_with_size, DEFAULT_PAYLOAD_SIZE};
+use crate::chunk::{split_into_chunks, split_into_chunks_with_size, DEFAULT_PAYLOAD_SIZE, Chunk};
 use crate::qr::{generate_qr_image, render_qr_to_terminal, save_qr_image};
 
 pub struct EncodeResult {
@@ -19,20 +22,21 @@ pub struct TerminalQrData {
     pub effective_size: usize,
 }
 
-pub fn encode_file(input_path: &Path, output_dir: &Path, chunk_size: Option<usize>) -> Result<EncodeResult> {
+/// Helper function to split data into chunks and ensure they fit into QR codes.
+/// Returns the chunks, the effective payload size used, and the filename string.
+fn prepare_chunks(input_path: &Path, chunk_size: Option<usize>) -> Result<(Vec<Chunk>, usize, String)> {
     let data = fs::read(input_path)?;
     let filename = input_path
         .file_name()
         .and_then(|s| s.to_str())
-        .ok_or_else(|| anyhow!("Invalid filename"))?;
-
-    fs::create_dir_all(output_dir)?;
+        .ok_or_else(|| anyhow!("Invalid filename"))?
+        .to_string();
 
     let mut current_size = chunk_size.unwrap_or(crate::chunk::MAX_PAYLOAD_SIZE);
     let mut chunks;
 
     loop {
-        chunks = split_into_chunks_with_size(&data, filename, current_size)?;
+        chunks = split_into_chunks_with_size(&data, &filename, current_size)?;
         
         // Test first chunk to see if it generates a valid QR code
         if let Some(first_chunk) = chunks.first() {
@@ -52,6 +56,14 @@ pub fn encode_file(input_path: &Path, output_dir: &Path, chunk_size: Option<usiz
              return Err(anyhow!("Failed to generate QR codes: data too long even at minimum payload size."));
         }
     }
+    
+    Ok((chunks, current_size, filename))
+}
+
+pub fn encode_file(input_path: &Path, output_dir: &Path, chunk_size: Option<usize>) -> Result<EncodeResult> {
+    fs::create_dir_all(output_dir)?;
+
+    let (chunks, effective_size, filename) = prepare_chunks(input_path, chunk_size)?;
     
     let num_chunks = chunks.len();
     let mut output_files = Vec::new();
@@ -85,7 +97,53 @@ pub fn encode_file(input_path: &Path, output_dir: &Path, chunk_size: Option<usiz
     Ok(EncodeResult {
         num_chunks,
         output_files,
-        effective_size: current_size,
+        effective_size,
+    })
+}
+
+pub fn encode_file_to_gif(input_path: &Path, output_gif: &Path, chunk_size: Option<usize>, interval_ms: u64) -> Result<EncodeResult> {
+    let (chunks, effective_size, _filename) = prepare_chunks(input_path, chunk_size)?;
+    let num_chunks = chunks.len();
+
+    // Ensure parent directory exists
+    if let Some(parent) = output_gif.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let file = fs::File::create(output_gif)?;
+    let mut encoder = GifEncoder::new(file);
+    encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+
+    // Only print progress every few frames if there are many
+    let should_print_progress = num_chunks > 10;
+
+    for (i, chunk) in chunks.iter().enumerate() {
+        let chunk_bytes = chunk.to_bytes()?;
+        let encoded = BASE64.encode(&chunk_bytes);
+        let qr_image = generate_qr_image(encoded.as_bytes())?;
+
+        // Convert RgbImage to RgbaImage for GIF
+        let rgba_image: RgbaImage = image::DynamicImage::ImageRgb8(qr_image).into_rgba8();
+        
+        // Create frame with delay
+        let delay = Delay::from_saturating_duration(Duration::from_millis(interval_ms));
+        let frame = Frame::from_parts(rgba_image, 0, 0, delay);
+
+        encoder.encode_frame(frame)?;
+
+        if should_print_progress {
+            if (i + 1) % 10 == 0 || i + 1 == num_chunks {
+                 println!("  Processed frame {}/{}", i + 1, num_chunks);
+            }
+        } else {
+             println!("  Processed frame {}/{}", i + 1, num_chunks);
+        }
+    }
+
+    Ok(EncodeResult {
+        num_chunks,
+        output_files: vec![output_gif.to_string_lossy().to_string()],
+        effective_size,
     })
 }
 

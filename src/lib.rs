@@ -20,7 +20,7 @@ pub use chunk::{Chunk, ChunkHeader, DEFAULT_PAYLOAD_SIZE, MAX_PAYLOAD_SIZE, spli
 pub use decode::{decode_qr_codes, decode_qr_video, DecodeResult};
 
 #[cfg(feature = "encode")]
-pub use encode::{encode_file, encode_file_for_terminal, EncodeResult, TerminalQrData};
+pub use encode::{encode_file, encode_file_for_terminal, encode_file_to_gif, EncodeResult, TerminalQrData};
 
 #[cfg(feature = "encode")]
 pub use terminal::{display_qr_carousel, display_qr_once};

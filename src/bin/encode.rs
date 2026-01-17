@@ -3,7 +3,7 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use cube::{
-    display_qr_carousel, display_qr_once, encode_file, encode_file_for_terminal,
+    display_qr_carousel, display_qr_once, encode_file, encode_file_for_terminal, encode_file_to_gif,
     DEFAULT_PAYLOAD_SIZE, MAX_PAYLOAD_SIZE,
 };
 
@@ -15,14 +15,18 @@ struct Cli {
     input: PathBuf,
 
     /// Output directory for QR code images
-    #[arg(short = 'm', long = "image-output-dir", required_unless_present = "terminal")]
+    #[arg(short = 'm', long = "image-output-dir", required_unless_present_any = ["terminal", "gif_output_file"])]
     image_output_dir: Option<PathBuf>,
+
+    /// Output animated GIF file containing all QR codes
+    #[arg(short = 'g', long)]
+    gif_output_file: Option<PathBuf>,
 
     /// Display QR codes in terminal instead of saving to files
     #[arg(short, long)]
     terminal: bool,
 
-    /// Interval in milliseconds for auto-switching QR codes in terminal mode (default: 2000)
+    /// Interval in milliseconds for auto-switching QR codes in terminal mode or GIF frame duration (default: 2000)
     #[arg(short, long, default_value = "2000")]
     interval: u64,
 
@@ -67,26 +71,48 @@ fn main() -> Result<()> {
             display_qr_carousel(&data, args.interval);
         }
     } else {
-        let output_dir = args.image_output_dir.expect("Required by clap logic");
         println!("Encoding file: {}", args.input.display());
-        println!("Output directory: {}", output_dir.display());
+        
+        if let Some(output_dir) = &args.image_output_dir {
+            println!("Output directory: {}", output_dir.display());
+        }
+        if let Some(gif_output) = &args.gif_output_file {
+             println!("Output GIF: {}", gif_output.display());
+             println!("GIF frame interval: {}ms", args.interval);
+        }
+
         if let Some(size) = args.chunk_size {
             println!("Max payload size: {} bytes", size);
         }
 
-        let result = encode_file(&args.input, &output_dir, args.chunk_size)?;
+        let mut effective_size = 0;
+        let mut total_chunks = 0;
+
+        // Perform GIF encoding first if requested
+        if let Some(gif_output) = &args.gif_output_file {
+             let result = encode_file_to_gif(&args.input, gif_output, args.chunk_size, args.interval)?;
+             effective_size = result.effective_size;
+             total_chunks = result.num_chunks;
+        }
+
+        // Perform directory output if requested
+        if let Some(output_dir) = &args.image_output_dir {
+             let result = encode_file(&args.input, output_dir, args.chunk_size)?;
+             effective_size = result.effective_size;
+             total_chunks = result.num_chunks;
+        }
 
         let requested_size = args.chunk_size.unwrap_or(MAX_PAYLOAD_SIZE);
-        if result.effective_size < requested_size {
+        if effective_size < requested_size && effective_size > 0 {
             println!();
             println!(
                 "⚠️  Automatically reduced payload size to {} bytes to fit QR code capacity.",
-                result.effective_size
+                effective_size
             );
         }
 
         println!();
-        println!("Successfully created {} QR code(s)", result.num_chunks);
+        println!("Successfully created {} QR code(s)", total_chunks);
     }
 
     Ok(())
