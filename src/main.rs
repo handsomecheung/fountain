@@ -2,7 +2,10 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
-use cube::{decode_qr_codes, display_qr_carousel, display_qr_once, encode_file, encode_file_for_terminal};
+use cube::{
+    decode_qr_codes, decode_qr_video, display_qr_carousel, display_qr_once, encode_file,
+    encode_file_for_terminal,
+};
 
 #[derive(Parser)]
 #[command(name = "cube")]
@@ -36,9 +39,9 @@ enum Commands {
         no_carousel: bool,
     },
 
-    /// Decode QR code images back to original file
+    /// Decode QR code images or video back to original file
     Decode {
-        /// Input directory containing QR code images
+        /// Input directory or video file
         input: PathBuf,
 
         /// Output file path (defaults to original filename in current directory)
@@ -90,9 +93,17 @@ fn main() -> Result<()> {
         }
 
         Commands::Decode { input, output } => {
-            println!("Decoding QR codes from: {}", input.display());
+            if !input.exists() {
+                anyhow::bail!("Input path does not exist: {}", input.display());
+            }
 
-            let result = decode_qr_codes(&input, output.as_deref())?;
+            let result = if input.is_dir() {
+                println!("Decoding QR codes from directory: {}", input.display());
+                decode_qr_codes(&input, output.as_deref())?
+            } else {
+                println!("Decoding QR codes from video file: {}", input.display());
+                decode_qr_video(&input, output.as_deref())?
+            };
 
             println!();
             println!("Successfully decoded {} QR code(s)", result.num_chunks);
