@@ -15,8 +15,8 @@ struct Cli {
     input: PathBuf,
 
     /// Output directory for QR code images
-    #[arg(short, long, default_value = "./qr_output")]
-    output: PathBuf,
+    #[arg(short = 'm', long = "image-output-dir", required_unless_present = "terminal")]
+    image_output_dir: Option<PathBuf>,
 
     /// Display QR codes in terminal instead of saving to files
     #[arg(short, long)]
@@ -67,13 +67,14 @@ fn main() -> Result<()> {
             display_qr_carousel(&data, args.interval);
         }
     } else {
+        let output_dir = args.image_output_dir.expect("Required by clap logic");
         println!("Encoding file: {}", args.input.display());
-        println!("Output directory: {}", args.output.display());
+        println!("Output directory: {}", output_dir.display());
         if let Some(size) = args.chunk_size {
             println!("Max payload size: {} bytes", size);
         }
 
-        let result = encode_file(&args.input, &args.output, args.chunk_size)?;
+        let result = encode_file(&args.input, &output_dir, args.chunk_size)?;
 
         let requested_size = args.chunk_size.unwrap_or(MAX_PAYLOAD_SIZE);
         if result.effective_size < requested_size {
