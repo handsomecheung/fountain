@@ -55,4 +55,7 @@ RUN git clone https://github.com/microsoft/vcpkg.git $VCPKG_ROOT && \
 # Installing minimal opencv features to save build time
 RUN $VCPKG_ROOT/vcpkg install "opencv[png,jpeg,tiff,webp,ffmpeg]:x64-linux" --recurse
 
+RUN rustup target add wasm32-unknown-unknown && \
+    cargo install wasm-bindgen-cli
+
 WORKDIR /code
