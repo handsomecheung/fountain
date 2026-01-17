@@ -19,8 +19,8 @@ struct Cli {
     #[arg(short, long)]
     terminal: bool,
 
-    /// Interval in seconds for auto-switching QR codes in terminal mode (default: 3)
-    #[arg(short, long, default_value = "3")]
+    /// Interval in milliseconds for auto-switching QR codes in terminal mode (default: 2000)
+    #[arg(short, long, default_value = "2000")]
     interval: u64,
 
     /// Show all QR codes at once without carousel (only with --terminal)
@@ -47,7 +47,7 @@ fn main() -> Result<()> {
         if args.no_carousel || data.total == 1 {
             display_qr_once(&data);
         } else {
-            println!("Starting carousel mode ({}s interval)...", args.interval);
+            println!("Starting carousel mode ({}ms interval)...", args.interval);
             println!("Press Ctrl+C to exit");
             std::thread::sleep(std::time::Duration::from_secs(1));
             display_qr_carousel(&data, args.interval);

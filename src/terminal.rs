@@ -9,7 +9,7 @@ const CLEAR_SCREEN: &str = "\x1B[2J\x1B[H";
 const HIDE_CURSOR: &str = "\x1B[?25l";
 const SHOW_CURSOR: &str = "\x1B[?25h";
 
-pub fn display_qr_carousel(data: &TerminalQrData, interval_secs: u64) {
+pub fn display_qr_carousel(data: &TerminalQrData, interval_ms: u64) {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
@@ -38,14 +38,17 @@ pub fn display_qr_carousel(data: &TerminalQrData, interval_secs: u64) {
 
         while running.load(Ordering::SeqCst) {
             display_single_qr(&data.qr_strings[current], &data.filename, current + 1, total);
-            println!("\nAuto-switching in {}s | Press Ctrl+C to exit...", interval_secs);
+            println!("\nAuto-switching in {}ms | Press Ctrl+C to exit...", interval_ms);
 
             // Wait for interval or until interrupted
-            for _ in 0..(interval_secs * 10) {
+            let start = std::time::Instant::now();
+            let duration = Duration::from_millis(interval_ms);
+            
+            while start.elapsed() < duration {
                 if !running.load(Ordering::SeqCst) {
                     break;
                 }
-                thread::sleep(Duration::from_millis(100));
+                thread::sleep(Duration::from_millis(std::cmp::min(50, interval_ms)));
             }
 
             current = (current + 1) % total;
