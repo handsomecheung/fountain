@@ -45,7 +45,6 @@ async function startCamera() {
         video.srcObject = stream;
         await video.play();
 
-        // Adjust canvas size to match video
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
 
@@ -91,7 +90,6 @@ function scanLoop() {
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-    // Call Wasm
     const result = decoder.scan_frame(
         imageData.data,
         canvas.width,
@@ -99,7 +97,6 @@ function scanLoop() {
     );
     const status = result.status;
 
-    // Update UI
     if (result.progress_total > 0) {
         const percent = (result.progress_current / result.progress_total) * 100;
         progressFill.style.width = `${percent}%`;

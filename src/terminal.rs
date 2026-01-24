@@ -13,7 +13,6 @@ pub fn display_qr_carousel(data: &TerminalQrData, interval_ms: u64) {
     let running = Arc::new(AtomicBool::new(true));
     let r = running.clone();
 
-    // Handle Ctrl+C
     ctrlc::set_handler(move || {
         r.store(false, Ordering::SeqCst);
     })
@@ -37,13 +36,21 @@ pub fn display_qr_carousel(data: &TerminalQrData, interval_ms: u64) {
         let mut current = 0;
 
         while running.load(Ordering::SeqCst) {
-            display_single_qr(&data.qr_strings[current], &data.filename, current + 1, total);
-            println!("\nAuto-switching in {}ms | Press Ctrl+C to exit...", interval_ms);
+            display_single_qr(
+                &data.qr_strings[current],
+                &data.filename,
+                current + 1,
+                total,
+            );
+            println!(
+                "\nAuto-switching in {}ms | Press Ctrl+C to exit...",
+                interval_ms
+            );
 
             // Wait for interval or until interrupted
             let start = std::time::Instant::now();
             let duration = Duration::from_millis(interval_ms);
-            
+
             while start.elapsed() < duration {
                 if !running.load(Ordering::SeqCst) {
                     break;

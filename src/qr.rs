@@ -7,7 +7,7 @@ use image::{Rgb, RgbImage};
 use image::{DynamicImage, GrayImage};
 
 #[cfg(feature = "encode")]
-use qrcode::{Color, EcLevel, QrCode};
+use qrcode::{Color, EcLevel, QrCode, Version};
 
 #[cfg(any(feature = "decode", feature = "wasm"))]
 use rqrr::PreparedImage;
@@ -16,22 +16,29 @@ use rqrr::PreparedImage;
 use std::path::Path;
 
 #[cfg(feature = "encode")]
-const QR_SCALE: u32 = 10;
+pub fn generate_qr_image(
+    data: &[u8],
+    specific_version: Option<Version>,
+    pixel_scale: u32,
+) -> Result<(RgbImage, Version)> {
+    let code = if let Some(v) = specific_version {
+        QrCode::with_version(data, v, EcLevel::M)
+            .map_err(|e| anyhow!("Failed to create QR code with specific version: {}", e))?
+    } else {
+        QrCode::with_error_correction_level(data, EcLevel::M)
+            .map_err(|e| anyhow!("Failed to create QR code: {}", e))?
+    };
 
-#[cfg(feature = "encode")]
-pub fn generate_qr_image(data: &[u8]) -> Result<RgbImage> {
-    // Use version that can fit the data, with medium error correction
-    let code = QrCode::with_error_correction_level(data, EcLevel::M)
-        .map_err(|e| anyhow!("Failed to create QR code: {}", e))?;
+    let version = code.version();
 
     let image = code
         .render::<Rgb<u8>>()
         .min_dimensions(200, 200)
         .quiet_zone(true)
-        .module_dimensions(QR_SCALE, QR_SCALE)
+        .module_dimensions(pixel_scale, pixel_scale)
         .build();
 
-    Ok(image)
+    Ok((image, version))
 }
 
 #[cfg(feature = "encode")]
@@ -161,7 +168,6 @@ pub fn fits_in_terminal(data: &[u8]) -> Result<bool> {
     let qr_size = code.width();
     let qr_with_quiet = qr_size + 4; // Add quiet zone
 
-    // Fixed scale=1
     let scale: usize = 1;
     let display_width = qr_with_quiet * scale;
     let display_height = (qr_with_quiet + 1) / 2 * scale;
@@ -185,7 +191,7 @@ mod tests {
     #[test]
     fn test_qr_generation() {
         let data = b"Hello, World!";
-        let image = generate_qr_image(data).unwrap();
+        let (image, _) = generate_qr_image(data, None, 4).unwrap();
         assert!(image.width() > 0);
         assert!(image.height() > 0);
     }
@@ -193,7 +199,7 @@ mod tests {
     #[test]
     fn test_qr_roundtrip() {
         let data = b"Test data for QR code roundtrip";
-        let image = generate_qr_image(data).unwrap();
+        let (image, _) = generate_qr_image(data, None, 4).unwrap();
 
         // Convert to grayscale for decoding
         let gray: GrayImage = image::DynamicImage::ImageRgb8(image).to_luma8();

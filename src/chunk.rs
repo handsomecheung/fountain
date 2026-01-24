@@ -2,7 +2,6 @@ use anyhow::{anyhow, Result};
 use flate2::read::ZlibDecoder;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::io::{Read, Write};
 
@@ -17,13 +16,14 @@ use std::io::{Read, Write};
 //   ~1400 bytes -> ~73x73 modules (original default)
 pub const DEFAULT_PAYLOAD_SIZE: usize = 100; // Small default for terminal display
 pub const MAX_PAYLOAD_SIZE: usize = 1400; // Max for file output
+pub const CHECKSUM_SIZE: usize = 8;
+pub const HEADER_SIZE: usize = 9; // 1 (version) + 4 (total) + 4 (index)
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct ChunkHeader {
-    pub filename: String,
-    pub total: usize,
-    pub index: usize,
-    pub checksum: String,
+    pub version: u8,
+    pub total: u32,
+    pub index: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -32,35 +32,45 @@ pub struct Chunk {
     pub data: Vec<u8>,
 }
 
+impl ChunkHeader {
+    pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
+        let mut bytes = [0u8; HEADER_SIZE];
+        bytes[0] = self.version;
+        bytes[1..5].copy_from_slice(&self.total.to_be_bytes());
+        bytes[5..9].copy_from_slice(&self.index.to_be_bytes());
+        bytes
+    }
+
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < HEADER_SIZE {
+            return Err(anyhow!("Invalid header: too short"));
+        }
+        let version = bytes[0];
+        let total = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+        let index = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
+        Ok(ChunkHeader {
+            version,
+            total,
+            index,
+        })
+    }
+}
+
 impl Chunk {
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let header_json = serde_json::to_string(&self.header)?;
-        let header_bytes = header_json.as_bytes();
-
-        // Format: [header_len (4 bytes)] [header_json] [data]
-        let header_len = header_bytes.len() as u32;
-        let mut result = Vec::new();
-        result.extend_from_slice(&header_len.to_be_bytes());
-        result.extend_from_slice(header_bytes);
+        let mut result = Vec::with_capacity(HEADER_SIZE + self.data.len());
+        result.extend_from_slice(&self.header.to_bytes());
         result.extend_from_slice(&self.data);
-
         Ok(result)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < 4 {
+        if bytes.len() < HEADER_SIZE {
             return Err(anyhow!("Invalid chunk data: too short"));
         }
 
-        let header_len = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as usize;
-
-        if bytes.len() < 4 + header_len {
-            return Err(anyhow!("Invalid chunk data: header truncated"));
-        }
-
-        let header_json = std::str::from_utf8(&bytes[4..4 + header_len])?;
-        let header: ChunkHeader = serde_json::from_str(header_json)?;
-        let data = bytes[4 + header_len..].to_vec();
+        let header = ChunkHeader::from_bytes(&bytes[..HEADER_SIZE])?;
+        let data = bytes[HEADER_SIZE..].to_vec();
 
         Ok(Chunk { header, data })
     }
@@ -79,11 +89,64 @@ pub fn decompress(data: &[u8]) -> Result<Vec<u8>> {
     Ok(result)
 }
 
-pub fn calculate_checksum(data: &[u8]) -> String {
+pub fn calculate_checksum(data: &[u8]) -> Vec<u8> {
     let mut hasher = Sha256::new();
     hasher.update(data);
     let result = hasher.finalize();
-    hex::encode(&result[..8]) // Use first 8 bytes for shorter checksum
+    result[..CHECKSUM_SIZE].to_vec()
+}
+
+// Pack data: [Checksum 8B] [Filename] [\0] [Content]
+pub fn pack_data(data: &[u8], filename: &str) -> Vec<u8> {
+    let checksum = calculate_checksum(data);
+    // Sanitize filename: remove null bytes
+    let clean_filename = filename.replace('\0', "");
+
+    let mut packed = Vec::with_capacity(CHECKSUM_SIZE + clean_filename.len() + 1 + data.len());
+    packed.extend_from_slice(&checksum);
+    packed.extend_from_slice(clean_filename.as_bytes());
+    packed.push(0); // Null terminator
+    packed.extend_from_slice(data);
+    packed
+}
+
+// Unpack data: -> (Filename, Content)
+pub fn unpack_data(packed: &[u8]) -> Result<(String, Vec<u8>)> {
+    if packed.len() < CHECKSUM_SIZE + 2 {
+        // Min: Checksum + 1 char + \0
+        return Err(anyhow!("Invalid packed data: too short"));
+    }
+
+    let expected_checksum = &packed[..CHECKSUM_SIZE];
+
+    let mut null_pos = None;
+    for i in CHECKSUM_SIZE..packed.len() {
+        if packed[i] == 0 {
+            null_pos = Some(i);
+            break;
+        }
+    }
+
+    let null_idx =
+        null_pos.ok_or_else(|| anyhow!("Invalid packed data: missing filename terminator"))?;
+
+    let filename_bytes = &packed[CHECKSUM_SIZE..null_idx];
+    let filename = std::str::from_utf8(filename_bytes)
+        .map_err(|_| anyhow!("Invalid filename: not valid UTF-8"))?
+        .to_string();
+
+    let content = packed[null_idx + 1..].to_vec();
+
+    let actual_checksum = calculate_checksum(&content);
+    if actual_checksum != expected_checksum {
+        return Err(anyhow!(
+            "Checksum mismatch: expected {:?}, got {:?}",
+            expected_checksum,
+            actual_checksum
+        ));
+    }
+
+    Ok((filename, content))
 }
 
 pub fn split_into_chunks(data: &[u8], filename: &str) -> Result<Vec<Chunk>> {
@@ -95,42 +158,75 @@ pub fn split_into_chunks_with_size(
     filename: &str,
     payload_size: usize,
 ) -> Result<Vec<Chunk>> {
-    let compressed = compress(data)?;
-    let checksum = calculate_checksum(data);
+    let packed = pack_data(data, filename);
+    let compressed = compress(&packed)?;
+    Ok(split_compressed_into_chunks(&compressed, payload_size).collect())
+}
 
-    let total_chunks = (compressed.len() + payload_size - 1) / payload_size;
-    let total_chunks = total_chunks.max(1);
+pub struct ChunkIterator<'a> {
+    compressed: &'a [u8],
+    payload_size: usize,
+    total_chunks: u32,
+    current_index: usize,
+    is_empty_input: bool,
+    finished: bool,
+}
 
-    let mut chunks = Vec::new();
+impl<'a> Iterator for ChunkIterator<'a> {
+    type Item = Chunk;
 
-    for (index, chunk_data) in compressed.chunks(payload_size).enumerate() {
-        let header = ChunkHeader {
-            filename: filename.to_string(),
-            total: total_chunks,
-            index,
-            checksum: checksum.clone(),
-        };
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.finished {
+            return None;
+        }
 
-        chunks.push(Chunk {
-            header,
+        if self.is_empty_input {
+            self.finished = true;
+            return Some(Chunk {
+                header: ChunkHeader {
+                    version: 0,
+                    total: 1,
+                    index: 0,
+                },
+                data: Vec::new(),
+            });
+        }
+
+        if self.current_index as u32 >= self.total_chunks {
+            self.finished = true;
+            return None;
+        }
+
+        let start = self.current_index * self.payload_size;
+        let end = (start + self.payload_size).min(self.compressed.len());
+        let chunk_data = &self.compressed[start..end];
+
+        let chunk = Chunk {
+            header: ChunkHeader {
+                version: 0,
+                total: self.total_chunks,
+                index: self.current_index as u32,
+            },
             data: chunk_data.to_vec(),
-        });
-    }
-
-    if chunks.is_empty() {
-        let header = ChunkHeader {
-            filename: filename.to_string(),
-            total: 1,
-            index: 0,
-            checksum,
         };
-        chunks.push(Chunk {
-            header,
-            data: Vec::new(),
-        });
-    }
 
-    Ok(chunks)
+        self.current_index += 1;
+        Some(chunk)
+    }
+}
+
+pub fn split_compressed_into_chunks(compressed: &[u8], payload_size: usize) -> ChunkIterator<'_> {
+    let total_chunks = (compressed.len() + payload_size - 1) / payload_size;
+    let total_chunks = total_chunks.max(1) as u32;
+
+    ChunkIterator {
+        compressed,
+        payload_size,
+        total_chunks,
+        current_index: 0,
+        is_empty_input: compressed.is_empty(),
+        finished: false,
+    }
 }
 
 pub fn merge_chunks(mut chunks: Vec<Chunk>) -> Result<(String, Vec<u8>)> {
@@ -140,11 +236,9 @@ pub fn merge_chunks(mut chunks: Vec<Chunk>) -> Result<(String, Vec<u8>)> {
 
     chunks.sort_by_key(|c| c.header.index);
 
-    let filename = chunks[0].header.filename.clone();
     let expected_total = chunks[0].header.total;
-    let expected_checksum = chunks[0].header.checksum.clone();
 
-    if chunks.len() != expected_total {
+    if chunks.len() as u32 != expected_total {
         return Err(anyhow!(
             "Missing chunks: expected {}, got {}",
             expected_total,
@@ -152,31 +246,19 @@ pub fn merge_chunks(mut chunks: Vec<Chunk>) -> Result<(String, Vec<u8>)> {
         ));
     }
 
-    // Verify indices are sequential
     for (i, chunk) in chunks.iter().enumerate() {
-        if chunk.header.index != i {
+        if chunk.header.index != i as u32 {
             return Err(anyhow!("Missing chunk at index {}", i));
         }
     }
 
-    // Merge data
     let mut compressed_data = Vec::new();
     for chunk in chunks {
         compressed_data.extend_from_slice(&chunk.data);
     }
 
-    let data = decompress(&compressed_data)?;
-
-    let actual_checksum = calculate_checksum(&data);
-    if actual_checksum != expected_checksum {
-        return Err(anyhow!(
-            "Checksum mismatch: expected {}, got {}",
-            expected_checksum,
-            actual_checksum
-        ));
-    }
-
-    Ok((filename, data))
+    let packed = decompress(&compressed_data)?;
+    unpack_data(&packed)
 }
 
 #[cfg(test)]
@@ -189,7 +271,6 @@ mod tests {
         let chunks = split_into_chunks(data, "test.txt").unwrap();
 
         assert_eq!(chunks.len(), 1);
-        assert_eq!(chunks[0].header.filename, "test.txt");
         assert_eq!(chunks[0].header.total, 1);
         assert_eq!(chunks[0].header.index, 0);
 
@@ -201,7 +282,6 @@ mod tests {
     #[test]
     fn test_large_data_chunking() {
         // Use data large enough to require multiple chunks even after compression
-        // Simple LCG pseudo-random to create incompressible data
         let mut x: u64 = 12345;
         let data: Vec<u8> = (0..100000)
             .map(|_| {
@@ -220,5 +300,17 @@ mod tests {
         let (filename, restored) = merge_chunks(chunks).unwrap();
         assert_eq!(filename, "large.bin");
         assert_eq!(restored, data);
+    }
+
+    #[test]
+    fn test_pack_unpack() {
+        let data = b"Some random data";
+        let filename = "example.file";
+
+        let packed = pack_data(data, filename);
+        let (name, content) = unpack_data(&packed).unwrap();
+
+        assert_eq!(name, filename);
+        assert_eq!(content, data);
     }
 }

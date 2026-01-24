@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
-use cube::{decode_qr_codes, decode_qr_video};
+use cube::{decode_from_gif, decode_from_images, decode_from_video};
 
 #[derive(Parser)]
 #[command(name = "cube-decode")]
@@ -25,10 +25,23 @@ fn main() -> Result<()> {
 
     let result = if args.input.is_dir() {
         println!("Decoding QR codes from directory: {}", args.input.display());
-        decode_qr_codes(&args.input, args.output.as_deref())?
+        decode_from_images(&args.input, args.output.as_deref())?
     } else {
-        println!("Decoding QR codes from video file: {}", args.input.display());
-        decode_qr_video(&args.input, args.output.as_deref())?
+        let is_gif = args
+            .input
+            .extension()
+            .map(|ext| ext.to_ascii_lowercase() == "gif")
+            .unwrap_or(false);
+
+        if is_gif {
+            decode_from_gif(&args.input, args.output.as_deref())?
+        } else {
+            println!(
+                "Decoding QR codes from video file: {}",
+                args.input.display()
+            );
+            decode_from_video(&args.input, args.output.as_deref())?
+        }
     };
 
     println!();

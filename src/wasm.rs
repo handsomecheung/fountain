@@ -78,13 +78,12 @@ impl QrStreamDecoder {
             }
         };
 
-        // 1. Try normal decode
+        // Try normal decode
         if let Some(result) = self.try_decode(&gray_image) {
             return result;
         }
 
-        // 2. Try inverted decode (for dark mode / inverted QR codes)
-        // Invert pixels in place
+        // Try inverted decode (for dark mode / inverted QR codes)
         for pixel in gray_image.iter_mut() {
             *pixel = 255 - *pixel;
         }
