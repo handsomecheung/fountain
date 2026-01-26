@@ -42,6 +42,10 @@ struct Cli {
     /// Pixel scale for QR code modules (default: 4).
     #[arg(long, default_value = "4")]
     pixel_scale: u32,
+
+    /// Halftone image path to blend with QR codes for a visual effect.
+    #[arg(long = "halftone")]
+    halftone_image: Option<PathBuf>,
 }
 
 fn main() -> Result<()> {
@@ -99,14 +103,20 @@ fn main() -> Result<()> {
                 args.chunk_size,
                 args.interval,
                 args.pixel_scale,
+                args.halftone_image.as_deref(),
             )?;
             effective_size = result.effective_size;
             total_chunks = result.num_chunks;
         }
 
         if let Some(output_dir) = &args.image_output_dir {
-            let result =
-                encode_file_to_images(&args.input, output_dir, args.chunk_size, args.pixel_scale)?;
+            let result = encode_file_to_images(
+                &args.input,
+                output_dir,
+                args.chunk_size,
+                args.pixel_scale,
+                args.halftone_image.as_deref(),
+            )?;
             effective_size = result.effective_size;
             total_chunks = result.num_chunks;
         }

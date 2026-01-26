@@ -17,7 +17,7 @@ fn test_encode_decode_roundtrip() {
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
     println!("Encoding...");
-    let encode_result = cube::encode_file_to_images(&source_file_path, &qr_output_dir, None, 4)
+    let encode_result = cube::encode_file_to_images(&source_file_path, &qr_output_dir, None, 4, None)
         .expect("Encoding failed");
 
     assert!(encode_result.num_chunks > 0);
@@ -57,7 +57,7 @@ fn test_encode_images_size_consistency() {
 
     // Use a small chunk size to ensure we get many chunks including a partial last one
     let encode_result =
-        cube::encode_file_to_images(&source_file_path, &qr_output_dir, Some(100), 4)
+        cube::encode_file_to_images(&source_file_path, &qr_output_dir, Some(100), 4, None)
             .expect("Encoding failed");
 
     assert!(
@@ -102,7 +102,7 @@ fn test_encode_gif_size_consistency() {
     let data: Vec<u8> = (0..20000).map(|i| (i % 255) as u8).collect();
     fs::write(&source_file_path, &data).expect("Failed to write source file");
 
-    cube::encode_file_to_gif(&source_file_path, &output_gif_path, Some(100), 100, 4)
+    cube::encode_file_to_gif(&source_file_path, &output_gif_path, Some(100), 100, 4, None)
         .expect("GIF encoding failed");
 
     let file = File::open(&output_gif_path).expect("Failed to open generated GIF");
@@ -146,7 +146,7 @@ fn test_encode_decode_gif_roundtrip() {
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
     println!("Encoding to GIF...");
-    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4)
+    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, None)
         .expect("GIF encoding failed");
 
     assert!(encode_result.num_chunks > 0);
@@ -176,8 +176,7 @@ fn test_encode_decode_video_roundtrip() {
     let original_content = "Roundtrip test for Video decoding (via GIF).";
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
-    println!("Encoding to GIF (as video source)...");
-    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4)
+    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, None)
         .expect("GIF encoding failed");
 
     assert!(encode_result.num_chunks > 0);

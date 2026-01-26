@@ -54,7 +54,7 @@ fn prepare_chunks(
             let chunk_bytes = first_chunk.to_bytes()?;
             let encoded = BASE64.encode(&chunk_bytes);
 
-            if generate_qr_image(encoded.as_bytes(), None, pixel_scale).is_ok() {
+            if generate_qr_image(encoded.as_bytes(), None, pixel_scale, None).is_ok() {
                 // First chunk fits, assume the rest fit too. Collect the rest of the chunks.
                 let mut chunks = vec![first_chunk];
                 chunks.extend(chunks_iter);
@@ -77,6 +77,7 @@ pub fn encode_file_to_images(
     output_dir: &Path,
     chunk_size: Option<usize>,
     pixel_scale: u32,
+    halftone_path: Option<&Path>,
 ) -> Result<EncodeResult> {
     fs::create_dir_all(output_dir)?;
 
@@ -93,7 +94,7 @@ pub fn encode_file_to_images(
         let encoded = BASE64.encode(&chunk_bytes);
 
         let (qr_image, version) =
-            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale)?;
+            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale, halftone_path)?;
 
         // Capture the version of the first chunk (which is typically the largest/full)
         // and use it for all subsequent chunks to ensure consistent image dimensions.
@@ -132,6 +133,7 @@ pub fn encode_file_to_gif(
     chunk_size: Option<usize>,
     interval_ms: u64,
     pixel_scale: u32,
+    halftone_path: Option<&Path>,
 ) -> Result<EncodeResult> {
     let (chunks, effective_size, _filename) = prepare_chunks(input_path, chunk_size, pixel_scale)?;
     let num_chunks = chunks.len();
@@ -153,7 +155,7 @@ pub fn encode_file_to_gif(
         let encoded = BASE64.encode(&chunk_bytes);
 
         let (qr_image, version) =
-            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale)?;
+            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale, halftone_path)?;
 
         if fixed_version.is_none() {
             fixed_version = Some(version);
@@ -201,7 +203,7 @@ pub fn encode_data(
         let encoded = BASE64.encode(&chunk_bytes);
 
         let (qr_image, version) =
-            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale)?;
+            generate_qr_image(encoded.as_bytes(), fixed_version, pixel_scale, None)?;
         if fixed_version.is_none() {
             fixed_version = Some(version);
         }

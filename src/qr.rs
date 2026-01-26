@@ -1,7 +1,7 @@
 use anyhow::{anyhow, Result};
 
 #[cfg(feature = "encode")]
-use image::{Rgb, RgbImage};
+use image::{imageops, Rgb, RgbImage};
 
 #[cfg(any(feature = "decode", feature = "wasm"))]
 use image::{DynamicImage, GrayImage};
@@ -20,25 +20,130 @@ pub fn generate_qr_image(
     data: &[u8],
     specific_version: Option<Version>,
     pixel_scale: u32,
+    halftone_path: Option<&Path>,
 ) -> Result<(RgbImage, Version)> {
+    // If halftone image is provided, force High error correction for better scannability
+    let ec_level = if halftone_path.is_some() {
+        EcLevel::H
+    } else {
+        EcLevel::M
+    };
+
     let code = if let Some(v) = specific_version {
-        QrCode::with_version(data, v, EcLevel::M)
+        QrCode::with_version(data, v, ec_level)
             .map_err(|e| anyhow!("Failed to create QR code with specific version: {}", e))?
     } else {
-        QrCode::with_error_correction_level(data, EcLevel::M)
+        QrCode::with_error_correction_level(data, ec_level)
             .map_err(|e| anyhow!("Failed to create QR code: {}", e))?
     };
 
     let version = code.version();
 
-    let image = code
+    if let Some(path) = halftone_path {
+        let bg_img =
+            image::open(path).map_err(|e| anyhow!("Failed to open halftone image: {}", e))?;
+        let bg_img = bg_img.into_rgb8();
+
+        let qr_width = code.width();
+        let quiet_zone = 4;
+        let total_width = (qr_width + 2 * quiet_zone) as u32 * pixel_scale;
+
+        let mut bg_resized = imageops::resize(
+            &bg_img,
+            total_width,
+            total_width,
+            imageops::FilterType::CatmullRom,
+        );
+
+        // Process Quiet Zone (Lighten it heavily to ensure contrast)
+        let data_start = quiet_zone as u32 * pixel_scale;
+        let data_end = (qr_width as u32 + quiet_zone as u32) * pixel_scale;
+
+        for (x, y, pixel) in bg_resized.enumerate_pixels_mut() {
+            if x < data_start || x >= data_end || y < data_start || y >= data_end {
+                // Mix 90% white
+                pixel[0] = (pixel[0] as f32 + (255.0 - pixel[0] as f32) * 0.9) as u8;
+                pixel[1] = (pixel[1] as f32 + (255.0 - pixel[1] as f32) * 0.9) as u8;
+                pixel[2] = (pixel[2] as f32 + (255.0 - pixel[2] as f32) * 0.9) as u8;
+            }
+        }
+
+        for y in 0..qr_width {
+            for x in 0..qr_width {
+                let color = code[(x, y)];
+                let is_dark = match color {
+                    Color::Dark => true,
+                    Color::Light => false,
+                };
+
+                // Finder Patterns (7x7) + Separator (1) = 8x8 area in corners
+                // Top-Left, Top-Right, Bottom-Left
+                let is_finder = (x < 8 && y < 8)
+                    || (x >= qr_width - 8 && y < 8)
+                    || (x < 8 && y >= qr_width - 8);
+
+                let px_start_x = (x as u32 + quiet_zone as u32) * pixel_scale;
+                let px_start_y = (y as u32 + quiet_zone as u32) * pixel_scale;
+
+                for py in 0..pixel_scale {
+                    for px in 0..pixel_scale {
+                        let bg_pixel = bg_resized.get_pixel_mut(px_start_x + px, px_start_y + py);
+
+                        if is_finder {
+                            // Finder Pattern: Solid colors for max readability
+                            if is_dark {
+                                bg_pixel[0] = 0;
+                                bg_pixel[1] = 0;
+                                bg_pixel[2] = 0;
+                            } else {
+                                bg_pixel[0] = 255;
+                                bg_pixel[1] = 255;
+                                bg_pixel[2] = 255;
+                            }
+                        } else {
+                            // Data Module: Halftone Dot Logic
+                            let border = if pixel_scale > 2 { pixel_scale / 4 } else { 0 };
+                            let is_center = px >= border
+                                && px < (pixel_scale - border)
+                                && py >= border
+                                && py < (pixel_scale - border);
+
+                            if is_center {
+                                if is_dark {
+                                    // Dark dot: Blend 80% black
+                                    bg_pixel[0] = (bg_pixel[0] as f32 * 0.2) as u8;
+                                    bg_pixel[1] = (bg_pixel[1] as f32 * 0.2) as u8;
+                                    bg_pixel[2] = (bg_pixel[2] as f32 * 0.2) as u8;
+                                } else {
+                                    // Light dot: Blend 80% white
+                                    bg_pixel[0] = (bg_pixel[0] as f32
+                                        + (255.0 - bg_pixel[0] as f32) * 0.8)
+                                        as u8;
+                                    bg_pixel[1] = (bg_pixel[1] as f32
+                                        + (255.0 - bg_pixel[1] as f32) * 0.8)
+                                        as u8;
+                                    bg_pixel[2] = (bg_pixel[2] as f32
+                                        + (255.0 - bg_pixel[2] as f32) * 0.8)
+                                        as u8;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        return Ok((bg_resized, version));
+    }
+
+    let qr_image = code
         .render::<Rgb<u8>>()
         .min_dimensions(200, 200)
         .quiet_zone(true)
         .module_dimensions(pixel_scale, pixel_scale)
         .build();
 
-    Ok((image, version))
+    Ok((qr_image, version))
 }
 
 #[cfg(feature = "encode")]
@@ -191,7 +296,7 @@ mod tests {
     #[test]
     fn test_qr_generation() {
         let data = b"Hello, World!";
-        let (image, _) = generate_qr_image(data, None, 4).unwrap();
+        let (image, _) = generate_qr_image(data, None, 4, None).unwrap();
         assert!(image.width() > 0);
         assert!(image.height() > 0);
     }
@@ -199,7 +304,7 @@ mod tests {
     #[test]
     fn test_qr_roundtrip() {
         let data = b"Test data for QR code roundtrip";
-        let (image, _) = generate_qr_image(data, None, 4).unwrap();
+        let (image, _) = generate_qr_image(data, None, 4, None).unwrap();
 
         // Convert to grayscale for decoding
         let gray: GrayImage = image::DynamicImage::ImageRgb8(image).to_luma8();
