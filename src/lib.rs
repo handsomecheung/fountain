@@ -23,8 +23,8 @@ pub use decode::{decode_from_gif, decode_from_images, decode_from_video, DecodeR
 
 #[cfg(feature = "encode")]
 pub use encode::{
-    encode_file_for_terminal, encode_file_to_gif, encode_file_to_images, EncodeResult,
-    TerminalQrData,
+    encode_file_for_terminal, encode_file_for_terminal_raptorq, encode_file_to_gif,
+    encode_file_to_images, EncodeResult, TerminalQrData,
 };
 
 #[cfg(feature = "encode")]

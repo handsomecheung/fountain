@@ -17,13 +17,15 @@ use std::io::{Read, Write};
 pub const DEFAULT_PAYLOAD_SIZE: usize = 100; // Small default for terminal display
 pub const MAX_PAYLOAD_SIZE: usize = 1400; // Max for file output
 pub const CHECKSUM_SIZE: usize = 8;
-pub const HEADER_SIZE: usize = 9; // 1 (version) + 4 (total) + 4 (index)
+pub const V0_HEADER_SIZE: usize = 9; // 1 (version) + 4 (total) + 4 (index)
+pub const V1_HEADER_SIZE: usize = 11; // 1 (version) + 4 (transfer len) + 4 (esi) + 2 (packet size)
 
 #[derive(Debug, Clone)]
 pub struct ChunkHeader {
     pub version: u8,
-    pub total: u32,
-    pub index: u32,
+    pub total: u32,       // V0: Total Chunks, V1: Transfer Length
+    pub index: u32,       // V0: Index, V1: ESI
+    pub packet_size: u16, // V0: Unused, V1: Packet Size
 }
 
 #[derive(Debug, Clone)]
@@ -33,44 +35,83 @@ pub struct Chunk {
 }
 
 impl ChunkHeader {
-    pub fn to_bytes(&self) -> [u8; HEADER_SIZE] {
-        let mut bytes = [0u8; HEADER_SIZE];
-        bytes[0] = self.version;
-        bytes[1..5].copy_from_slice(&self.total.to_be_bytes());
-        bytes[5..9].copy_from_slice(&self.index.to_be_bytes());
-        bytes
+    pub fn to_bytes(&self) -> Vec<u8> {
+        match self.version {
+            0 => {
+                let mut bytes = vec![0u8; V0_HEADER_SIZE];
+                bytes[0] = self.version;
+                bytes[1..5].copy_from_slice(&self.total.to_be_bytes());
+                bytes[5..9].copy_from_slice(&self.index.to_be_bytes());
+                bytes
+            }
+            1 => {
+                let mut bytes = vec![0u8; V1_HEADER_SIZE];
+                bytes[0] = self.version;
+                bytes[1..5].copy_from_slice(&self.total.to_be_bytes());
+                bytes[5..9].copy_from_slice(&self.index.to_be_bytes());
+                bytes[9..11].copy_from_slice(&self.packet_size.to_be_bytes());
+                bytes
+            }
+            _ => panic!("Unsupported version for encoding: {}", self.version),
+        }
     }
 
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < HEADER_SIZE {
-            return Err(anyhow!("Invalid header: too short"));
+    pub fn from_bytes(bytes: &[u8]) -> Result<(Self, usize)> {
+        if bytes.is_empty() {
+            return Err(anyhow!("Invalid header: empty"));
         }
         let version = bytes[0];
-        let total = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
-        let index = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
-        Ok(ChunkHeader {
-            version,
-            total,
-            index,
-        })
+        match version {
+            0 => {
+                if bytes.len() < V0_HEADER_SIZE {
+                    return Err(anyhow!("Invalid V0 header: too short"));
+                }
+                let total = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+                let index = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
+                Ok((
+                    ChunkHeader {
+                        version,
+                        total,
+                        index,
+                        packet_size: 0,
+                    },
+                    V0_HEADER_SIZE,
+                ))
+            }
+            1 => {
+                if bytes.len() < V1_HEADER_SIZE {
+                    return Err(anyhow!("Invalid V1 header: too short"));
+                }
+                let total = u32::from_be_bytes([bytes[1], bytes[2], bytes[3], bytes[4]]);
+                let index = u32::from_be_bytes([bytes[5], bytes[6], bytes[7], bytes[8]]);
+                let packet_size = u16::from_be_bytes([bytes[9], bytes[10]]);
+                Ok((
+                    ChunkHeader {
+                        version,
+                        total,
+                        index,
+                        packet_size,
+                    },
+                    V1_HEADER_SIZE,
+                ))
+            }
+            _ => Err(anyhow!("Unsupported chunk version: {}", version)),
+        }
     }
 }
 
 impl Chunk {
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        let mut result = Vec::with_capacity(HEADER_SIZE + self.data.len());
-        result.extend_from_slice(&self.header.to_bytes());
+        let header_bytes = self.header.to_bytes();
+        let mut result = Vec::with_capacity(header_bytes.len() + self.data.len());
+        result.extend_from_slice(&header_bytes);
         result.extend_from_slice(&self.data);
         Ok(result)
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() < HEADER_SIZE {
-            return Err(anyhow!("Invalid chunk data: too short"));
-        }
-
-        let header = ChunkHeader::from_bytes(&bytes[..HEADER_SIZE])?;
-        let data = bytes[HEADER_SIZE..].to_vec();
+        let (header, header_len) = ChunkHeader::from_bytes(bytes)?;
+        let data = bytes[header_len..].to_vec();
 
         Ok(Chunk { header, data })
     }
@@ -187,6 +228,7 @@ impl<'a> Iterator for ChunkIterator<'a> {
                     version: 0,
                     total: 1,
                     index: 0,
+                    packet_size: 0,
                 },
                 data: Vec::new(),
             });
@@ -206,6 +248,7 @@ impl<'a> Iterator for ChunkIterator<'a> {
                 version: 0,
                 total: self.total_chunks,
                 index: self.current_index as u32,
+                packet_size: 0,
             },
             data: chunk_data.to_vec(),
         };

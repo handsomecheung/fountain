@@ -86,8 +86,14 @@ pub fn render_qr_to_terminal(data: &[u8]) -> Result<String> {
     let colors = code.to_colors();
 
     let (term_width, term_height) = terminal_size()
-        .map(|(Width(w), Height(h))| (w as usize, h as usize))
-        .unwrap_or((80, 24));
+        .map(|(Width(w), Height(h))| {
+            if w < 40 || h < 30 {
+                (120, 60)
+            } else {
+                (w as usize, h as usize)
+            }
+        })
+        .unwrap_or((120, 60));
 
     let qr_with_quiet = qr_size + 4; // Add quiet zone
 
@@ -173,8 +179,14 @@ pub fn fits_in_terminal(data: &[u8]) -> Result<bool> {
     let display_height = (qr_with_quiet + 1) / 2 * scale;
 
     let (term_width, term_height) = terminal_size()
-        .map(|(Width(w), Height(h))| (w as usize, h as usize))
-        .unwrap_or((80, 24));
+        .map(|(Width(w), Height(h))| {
+            if w < 40 || h < 30 {
+                (120, 60)
+            } else {
+                (w as usize, h as usize)
+            }
+        })
+        .unwrap_or((120, 60));
 
     // Check if it fits (allow 6 lines for header/footer/spacing)
     if display_width > term_width || display_height + 6 > term_height {

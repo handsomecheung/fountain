@@ -3,8 +3,9 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use cube::{
-    display_qr_carousel, display_qr_once, encode_file_for_terminal, encode_file_to_gif,
-    encode_file_to_images, DEFAULT_PAYLOAD_SIZE, MAX_PAYLOAD_SIZE,
+    display_qr_carousel, display_qr_once, encode_file_for_terminal,
+    encode_file_for_terminal_raptorq, encode_file_to_gif, encode_file_to_images,
+    DEFAULT_PAYLOAD_SIZE, MAX_PAYLOAD_SIZE,
 };
 
 #[derive(Parser)]
@@ -42,6 +43,11 @@ struct Cli {
     /// Pixel scale for QR code modules (default: 4).
     #[arg(long, default_value = "4")]
     pixel_scale: u32,
+
+    /// Use RaptorQ (Fountain Codes) for encoding.
+    /// Currently only supported for terminal output (infinite stream).
+    #[arg(long)]
+    raptorq: bool,
 }
 
 fn main() -> Result<()> {
@@ -53,7 +59,12 @@ fn main() -> Result<()> {
             args.input.display()
         );
 
-        let data = encode_file_for_terminal(&args.input, args.chunk_size)?;
+        let data = if args.raptorq {
+            println!("Using RaptorQ (Fountain Codes) mode.");
+            encode_file_for_terminal_raptorq(&args.input, args.chunk_size)?
+        } else {
+            encode_file_for_terminal(&args.input, args.chunk_size)?
+        };
 
         println!("Generated {} QR code(s)", data.total);
 
@@ -99,14 +110,20 @@ fn main() -> Result<()> {
                 args.chunk_size,
                 args.interval,
                 args.pixel_scale,
+                args.raptorq,
             )?;
             effective_size = result.effective_size;
             total_chunks = result.num_chunks;
         }
 
         if let Some(output_dir) = &args.image_output_dir {
-            let result =
-                encode_file_to_images(&args.input, output_dir, args.chunk_size, args.pixel_scale)?;
+            let result = encode_file_to_images(
+                &args.input,
+                output_dir,
+                args.chunk_size,
+                args.pixel_scale,
+                args.raptorq,
+            )?;
             effective_size = result.effective_size;
             total_chunks = result.num_chunks;
         }
