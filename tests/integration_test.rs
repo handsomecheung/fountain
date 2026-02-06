@@ -13,11 +13,11 @@ fn test_encode_decode_roundtrip() {
     fs::create_dir(&qr_output_dir).expect("Failed to create qr output dir");
 
     let source_file_path = input_dir.join("source.txt");
-    let original_content = "Hello, world! This is a test for cube encode/decode roundtrip.";
+    let original_content = "Hello, world! This is a test for fountain encode/decode roundtrip.";
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
     println!("Encoding...");
-    let encode_result = cube::encode_file_to_images(&source_file_path, &qr_output_dir, None, 4, false)
+    let encode_result = fountain::encode_file_to_images(&source_file_path, &qr_output_dir, None, 4, false)
         .expect("Encoding failed");
 
     assert!(encode_result.num_chunks > 0);
@@ -27,7 +27,7 @@ fn test_encode_decode_roundtrip() {
     assert_eq!(count, encode_result.num_chunks);
 
     println!("Decoding...");
-    let decode_result = cube::decode_from_images(&qr_output_dir, Some(&decoded_output_path))
+    let decode_result = fountain::decode_from_images(&qr_output_dir, Some(&decoded_output_path))
         .expect("Decoding failed");
 
     assert_eq!(decode_result.num_chunks, encode_result.num_chunks);
@@ -57,7 +57,7 @@ fn test_encode_images_size_consistency() {
 
     // Use a small chunk size to ensure we get many chunks including a partial last one
     let encode_result =
-        cube::encode_file_to_images(&source_file_path, &qr_output_dir, Some(100), 4, false)
+        fountain::encode_file_to_images(&source_file_path, &qr_output_dir, Some(100), 4, false)
             .expect("Encoding failed");
 
     assert!(
@@ -102,7 +102,7 @@ fn test_encode_gif_size_consistency() {
     let data: Vec<u8> = (0..20000).map(|i| (i % 255) as u8).collect();
     fs::write(&source_file_path, &data).expect("Failed to write source file");
 
-    cube::encode_file_to_gif(&source_file_path, &output_gif_path, Some(100), 100, 4, false)
+    fountain::encode_file_to_gif(&source_file_path, &output_gif_path, Some(100), 100, 4, false)
         .expect("GIF encoding failed");
 
     let file = File::open(&output_gif_path).expect("Failed to open generated GIF");
@@ -146,13 +146,13 @@ fn test_encode_decode_gif_roundtrip() {
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
     println!("Encoding to GIF...");
-    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, false)
+    let encode_result = fountain::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, false)
         .expect("GIF encoding failed");
 
     assert!(encode_result.num_chunks > 0);
 
     println!("Decoding from GIF...");
-    let decode_result = cube::decode_from_gif(&output_gif_path, Some(&decoded_output_path))
+    let decode_result = fountain::decode_from_gif(&output_gif_path, Some(&decoded_output_path))
         .expect("GIF decoding failed");
 
     assert_eq!(decode_result.num_chunks, encode_result.num_chunks);
@@ -177,14 +177,14 @@ fn test_encode_decode_video_roundtrip() {
     fs::write(&source_file_path, original_content).expect("Failed to write source file");
 
     println!("Encoding to GIF (as video source)...");
-    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, false)
+    let encode_result = fountain::encode_file_to_gif(&source_file_path, &output_gif_path, None, 100, 4, false)
         .expect("GIF encoding failed");
 
     assert!(encode_result.num_chunks > 0);
 
     println!("Decoding from Video (GIF file)...");
     let decode_result =
-        cube::decode_from_video(&output_gif_path, Some(&decoded_output_path))
+        fountain::decode_from_video(&output_gif_path, Some(&decoded_output_path))
             .expect("Video decoding failed");
 
     assert_eq!(decode_result.num_chunks, encode_result.num_chunks);
@@ -208,7 +208,7 @@ fn test_terminal_raptorq_generation() {
 
     println!("Encoding for terminal with RaptorQ...");
     // Use a small chunk size to force multiple packets
-    let terminal_data = cube::encode_file_for_terminal_raptorq(&source_file_path, Some(100))
+    let terminal_data = fountain::encode_file_for_terminal_raptorq(&source_file_path, Some(100))
         .expect("Encoding failed");
 
     assert!(terminal_data.total > 0);
@@ -237,13 +237,13 @@ fn test_raptorq_gif_roundtrip() {
 
     println!("Encoding to GIF with RaptorQ...");
     // Use smaller chunks to force redundancy
-    let encode_result = cube::encode_file_to_gif(&source_file_path, &output_gif_path, Some(200), 50, 4, true)
+    let encode_result = fountain::encode_file_to_gif(&source_file_path, &output_gif_path, Some(200), 50, 4, true)
         .expect("GIF encoding failed");
 
     assert!(encode_result.num_chunks > 1);
 
     println!("Decoding from GIF (RaptorQ)...");
-    let decode_result = cube::decode_from_gif(&output_gif_path, Some(&decoded_output_path))
+    let decode_result = fountain::decode_from_gif(&output_gif_path, Some(&decoded_output_path))
         .expect("GIF decoding failed");
 
     // num_chunks might be total packets found (which is > source chunks)

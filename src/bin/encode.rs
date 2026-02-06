@@ -2,14 +2,14 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
-use cube::{
+use fountain::{
     display_qr_carousel, display_qr_once, encode_file_for_terminal,
     encode_file_for_terminal_raptorq, encode_file_to_gif, encode_file_to_images,
     DEFAULT_PAYLOAD_SIZE, MAX_PAYLOAD_SIZE,
 };
 
 #[derive(Parser)]
-#[command(name = "cube-encode")]
+#[command(name = "fountain-encode")]
 #[command(author, version, about = "Encode files to QR codes", long_about = None)]
 struct Cli {
     /// Input file to encode

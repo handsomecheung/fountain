@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   # Build Cross-Platform Encode (Pure Rust)
-  # Builds cube-encode for all platforms (no OpenCV required)
+  # Builds fountain-encode for all platforms (no OpenCV required)
   build-encode-cross:
     name: Build Encode ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
@@ -19,19 +19,19 @@ jobs:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
-            asset_name: cube-encode-linux-x86_64
+            asset_name: fountain-encode-linux-x86_64
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
-            asset_name: cube-encode-linux-aarch64
+            asset_name: fountain-encode-linux-aarch64
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            asset_name: cube-encode-windows-x86_64.exe
+            asset_name: fountain-encode-windows-x86_64.exe
           - os: macos-latest
             target: x86_64-apple-darwin
-            asset_name: cube-encode-macos-x86_64
+            asset_name: fountain-encode-macos-x86_64
           - os: macos-latest
             target: aarch64-apple-darwin
-            asset_name: cube-encode-macos-aarch64
+            asset_name: fountain-encode-macos-aarch64
 
     steps:
       - name: Checkout code
@@ -61,22 +61,22 @@ jobs:
           EOF
 
       - name: Build Encode
-        run: cargo build --release --bin cube-encode --no-default-features --features encode --target ${{ matrix.target }}
+        run: cargo build --release --bin fountain-encode --no-default-features --features encode --target ${{ matrix.target }}
 
       - name: Strip binary (Unix)
         if: matrix.os != 'windows-latest'
         run: |
           if [ "${{ matrix.target }}" = "aarch64-unknown-linux-musl" ]; then
-            aarch64-linux-gnu-strip target/${{ matrix.target }}/release/cube-encode
+            aarch64-linux-gnu-strip target/${{ matrix.target }}/release/fountain-encode
           else
-            strip target/${{ matrix.target }}/release/cube-encode
+            strip target/${{ matrix.target }}/release/fountain-encode
           fi
 
       - name: Prepare Artifact
         shell: bash
         run: |
           mkdir dist
-          cp target/${{ matrix.target }}/release/cube-encode${{ matrix.os == 'windows-latest' && '.exe' || '' }} dist/${{ matrix.asset_name }}
+          cp target/${{ matrix.target }}/release/fountain-encode${{ matrix.os == 'windows-latest' && '.exe' || '' }} dist/${{ matrix.asset_name }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -103,18 +103,18 @@ jobs:
       - name: Build WASM
         run: |
           cargo build --release --target wasm32-unknown-unknown --no-default-features --features wasm
-          wasm-bindgen target/wasm32-unknown-unknown/release/cube.wasm --out-dir www/pkg --target web
+          wasm-bindgen target/wasm32-unknown-unknown/release/fountain.wasm --out-dir www/pkg --target web
 
       - name: Package WASM
         run: |
           cd www
-          zip -r ../cube-wasm.zip pkg/ index.html main.js
+          zip -r ../fountain-wasm.zip pkg/ index.html main.js
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: wasm-pkg
-          path: cube-wasm.zip
+          path: fountain-wasm.zip
 
   release:
     name: Create Release

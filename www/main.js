@@ -1,4 +1,4 @@
-import init, { QrStreamDecoder, ScanStatus } from "./pkg/cube.js";
+import init, { QrStreamDecoder, ScanStatus } from "./pkg/fountain.js";
 
 let decoder = null;
 let stream = null;

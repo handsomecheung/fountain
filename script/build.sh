@@ -9,8 +9,8 @@ try_build_dev
 
 # VCPKGRS_DYNAMIC=0 forces static linking for vcpkg dependencies
 # OPENCV_LINKAGE=static tells the opencv crate to link statically
-${CUBE_DOCKER} run --rm \
+${FOUNTAIN_DOCKER} run --rm \
     -v "$(pwd):/code" \
     -e VCPKGRS_DYNAMIC=0 \
     -e OPENCV_LINKAGE=static \
-    "${CUBE_IMAGE_DEV}" ./script/rust/compile.sh
+    "${FOUNTAIN_IMAGE_DEV}" ./script/rust/compile.sh

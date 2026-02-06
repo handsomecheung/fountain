@@ -2,10 +2,10 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
-use cube::{decode_from_gif, decode_from_images, decode_from_video};
+use fountain::{decode_from_gif, decode_from_images, decode_from_video};
 
 #[derive(Parser)]
-#[command(name = "cube-decode")]
+#[command(name = "fountain-decode")]
 #[command(author, version, about = "Decode QR code images or video back to original file", long_about = None)]
 struct Cli {
     /// Input directory or video file

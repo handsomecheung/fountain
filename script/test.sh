@@ -7,8 +7,8 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 try_build_dev
 
-${CUBE_DOCKER} run --rm \
+${FOUNTAIN_DOCKER} run --rm \
     -v "$(pwd):/code" \
     -e VCPKGRS_DYNAMIC=0 \
     -e OPENCV_LINKAGE=static \
-    "${CUBE_IMAGE_DEV}" ./script/rust/test.sh
+    "${FOUNTAIN_IMAGE_DEV}" ./script/rust/test.sh
